@@ -1,4 +1,5 @@
 pub mod champion;
+pub mod error;
 pub mod item;
 pub mod lcu;
 pub mod map;
