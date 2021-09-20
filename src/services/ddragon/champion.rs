@@ -1,1 +1,5 @@
-fn test() {}
+struct Champion {
+    url: String,
+}
+
+impl Champion {}
