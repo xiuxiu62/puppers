@@ -3,10 +3,8 @@ use async_trait::async_trait;
 pub type ReqwestResult<T> = reqwest::Result<T>;
 
 #[async_trait]
-pub trait Get {
-    async fn get(url: &str) -> ReqwestResult<Self>
-    where
-        Self: Sized;
+pub trait Get<T> {
+    async fn get(&self, url: &str) -> ReqwestResult<T>;
 }
 
 #[async_trait]
