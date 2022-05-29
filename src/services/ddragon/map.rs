@@ -1,8 +1,28 @@
 use crate::services::{ddragon::BASE_URL, Service, ServiceResult};
 use serde::Deserialize;
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct MapObject {
+    // #[serde(rename = "type", skip)]
+    #[serde(rename = "type")]
+    type_field: String,
+    // #[serde(skip)]
+    version: String,
+    data: HashMap<String, Map>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Map {
+    #[serde(rename(deserialize = "MapName"))]
+    name: String,
+    #[serde(rename = "MapId")]
+    id: String,
+    #[serde(skip)]
+    image: MapImage,
+}
+
+#[derive(Default, Debug, Deserialize, PartialEq)]
 struct MapImage {
     full: String,
     sprite: String,
@@ -13,36 +33,29 @@ struct MapImage {
     h: u32,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-struct Map {
-    map_name: String,
-    map_id: u32,
-    image: MapImage,
-}
-
-type MapList = HashMap<u32, Map>;
+type MapList = HashMap<u32, String>;
 
 #[derive(Debug)]
 pub struct MapService(Service<MapList>);
 
 impl MapService {
     pub fn new(patch_id: &str, region: &str) -> Self {
-        let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/item.json");
+        let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/map.json");
 
         Self(Service::new(endpoint, None))
     }
 
     async fn get_name_from_id(&mut self, id: u32) -> ServiceResult<Option<&str>> {
         let cache = self.cache().await?;
-        let name = cache.get(&id).map(|item| item.map_name.as_str());
+        let name = cache.get(&id).map(|name| name.as_ref());
 
         Ok(name)
     }
 
     async fn get_id_from_name<'a>(&'a mut self, name: &str) -> ServiceResult<Option<&u32>> {
         let cache = self.cache().await?;
-        let id = cache.iter().find_map(|(key, value): (&'a u32, &Map)| {
-            if value.map_name == name {
+        let id = cache.iter().find_map(|(key, value): (&'a u32, &String)| {
+            if value == name {
                 return Some(key);
             }
 
@@ -52,59 +65,61 @@ impl MapService {
         Ok(id)
     }
 
+    // UNWRAP SAFETY: in the case that cache is None, we populate it before returning
     async fn cache(&mut self) -> ServiceResult<&MapList> {
-        self.0.cache().await
-    }
-}
+        if self.0.cache.is_none() {
+            self.populate_cache().await?;
+        }
 
-impl Display for MapService {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "map service")
+        Ok(self.0.cache.as_ref().unwrap())
     }
-}
 
-#[macro_export]
-macro_rules! arc_mutex {
-    ($value:ident) => {
-        Arc::new(Mutex::new($value))
-    };
+    async fn populate_cache(&mut self) -> ServiceResult<()> {
+        // Applies an insert operation in the Lfold
+        let insert_map = |mut acc: MapList, (id, map): (String, Map)| -> ServiceResult<MapList> {
+            let id = id.parse::<u32>()?;
+            acc.insert(id, map.name);
+
+            Ok(acc)
+        };
+
+        let map_object: MapObject = reqwest::get(&self.0.endpoint).await?.json().await?;
+        let map_list: MapList = map_object
+            .data
+            .into_iter()
+            .try_fold(HashMap::new(), insert_map)?;
+        self.0.cache = Some(map_list);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use std::sync::{Arc, Mutex};
 
     use super::{MapService, ServiceResult};
-    use crate::services::{ddragon::PatchService, ServiceError};
-    use lazy_static::lazy_static;
-
-    lazy_static! {
-        static ref PATCH_SERVICE: Arc<Mutex<Option<MapService>>> = arc_mutex!(None);
-    }
+    use crate::services::ddragon::PatchService;
 
     const TEST_DATA: [(u32, &str); 3] = [
         (11, "Summoner's Rift"),
         (12, "Howling Abyss"),
-        (13, "Nexus Blitz"),
+        (21, "Nexus Blitz"),
     ];
 
     async fn initialize() -> ServiceResult<MapService> {
         let mut patch_service = PatchService::default();
         let current_patch = patch_service.get_current().await?;
         let region = "en_US";
-        let service = MapService::new(current_patch, region);
+        let mut service = MapService::new(current_patch, region);
+        service.cache().await?;
 
-        match Arc::clone(&PATCH_SERVICE).lock() {
-            Ok(mut value) => *value = Some(service),
-            Err(_) => return Err(ServiceError::LockPoisoned("map service".to_owned())),
-        }
-
-        Ok(MapService::new(current_patch, region))
+        Ok(service)
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn initialization_works() -> ServiceResult<()> {
         let _map_service = initialize().await?;
+        println!("{:?}", _map_service.0.cache);
 
         Ok(())
     }

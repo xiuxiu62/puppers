@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::PoisonError};
+use std::{fmt::Display, num::ParseIntError, sync::PoisonError};
 use thiserror::Error;
 
 pub type ServiceResult<T> = std::result::Result<T, ServiceError>;
@@ -13,6 +13,8 @@ pub enum ServiceError {
     ProcessNotFound(String),
     #[error("Failed to aquire lock: {0}")]
     LockPoisoned(String),
+    #[error(r#"Failed to parse "{0}" into an int"#)]
+    ParseInt(String),
 }
 
 impl From<reqwest::Error> for ServiceError {
@@ -29,5 +31,13 @@ where
         let message = format!("{}", err.into_inner());
 
         Self::LockPoisoned(message)
+    }
+}
+
+impl From<ParseIntError> for ServiceError {
+    fn from(err: ParseIntError) -> Self {
+        let message = format!("{}", err);
+
+        Self::ParseInt(message)
     }
 }

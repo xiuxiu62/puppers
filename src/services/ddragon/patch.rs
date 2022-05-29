@@ -39,13 +39,6 @@ impl PatchService {
     }
 }
 
-// #[async_trait]
-// impl Get<PatchList> for PatchService {
-//     async fn get(&self, url: &str) -> ServiceResult<PatchList> {
-//         Ok(reqwest::get(url).await?.json().await?)
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use super::{PatchService, ServiceResult};
