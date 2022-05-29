@@ -1,4 +1,4 @@
-use crate::services::{ddragon::BASE_URL, util, Service, ServiceResult};
+use crate::services::{ddragon::BASE_URL, Service, ServiceResult};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 
@@ -110,9 +110,9 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn get_id_succeeds() -> ServiceResult<()> {
-        let mut map_service = initialize().await?;
+        let mut item_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = map_service.get_id_from_name(name).await?;
+            let result = item_service.get_id_from_name(name).await?;
 
             assert!(result.is_some());
             assert_eq!(*result.unwrap(), id);
@@ -123,9 +123,9 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn get_name_succeeds() -> ServiceResult<()> {
-        let mut map_service = initialize().await?;
+        let mut item_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = map_service.get_name_from_id(id).await?;
+            let result = item_service.get_name_from_id(id).await?;
 
             assert!(result.is_some());
             assert_eq!(result.unwrap(), name);
