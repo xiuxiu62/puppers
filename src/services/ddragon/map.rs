@@ -16,7 +16,7 @@ struct Map {
     name: String,
 }
 
-fn deserialize_map_data<'de, D>(deserializer: D) -> Result<HashMap<u32, String>, D::Error>
+fn deserialize_map_data<'de, D>(deserializer: D) -> Result<MapList, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -44,14 +44,14 @@ impl MapService {
         Self(Service::new(endpoint, None))
     }
 
-    async fn get_name_from_id(&mut self, id: u32) -> ServiceResult<Option<&str>> {
+    async fn get_name(&mut self, id: u32) -> ServiceResult<Option<&str>> {
         let cache = self.cache().await?;
         let name = cache.get(&id).map(|name| name.as_ref());
 
         Ok(name)
     }
 
-    async fn get_id_from_name<'a>(&'a mut self, name: &str) -> ServiceResult<Option<&u32>> {
+    async fn get_id<'a>(&'a mut self, name: &str) -> ServiceResult<Option<&u32>> {
         let cache = self.cache().await?;
         let id = cache.iter().find_map(|(key, value): (&'a u32, &String)| {
             if value == name {
@@ -114,7 +114,7 @@ mod test {
     async fn get_id_succeeds() -> ServiceResult<()> {
         let mut map_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = map_service.get_id_from_name(name).await?;
+            let result = map_service.get_id(name).await?;
 
             assert!(result.is_some());
             assert_eq!(*result.unwrap(), id);
@@ -127,7 +127,7 @@ mod test {
     async fn get_name_succeeds() -> ServiceResult<()> {
         let mut map_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = map_service.get_name_from_id(id).await?;
+            let result = map_service.get_name(id).await?;
 
             assert!(result.is_some());
             assert_eq!(result.unwrap(), name);
