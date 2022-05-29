@@ -1,6 +1,8 @@
-use crate::services::{ddragon::BASE_URL, util, Service, ServiceResult};
-use serde::Deserialize;
+use crate::services::{ddragon::BASE_URL, Service, ServiceResult};
+use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
+
+type MapList = HashMap<u32, String>;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct MapObject {
@@ -8,23 +10,37 @@ struct MapObject {
     type_field: (),
     #[serde(skip)]
     version: (),
-    data: HashMap<String, Map>,
+    #[serde(deserialize_with = "deserialize_map_data")]
+    data: MapList,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Map {
     #[serde(rename(deserialize = "MapName"))]
     name: String,
-    #[serde(
-        rename(deserialize = "MapId"),
-        deserialize_with = "util::deserialize_number_from_string"
-    )]
+    #[serde(rename(deserialize = "MapId"), skip)]
     id: u32,
     #[serde(skip)]
     image: (),
 }
 
-type MapList = HashMap<u32, String>;
+fn deserialize_map_data<'de, D>(deserializer: D) -> Result<HashMap<u32, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct IntermediaryMap(HashMap<u32, Map>);
+
+    let insert_map = |mut acc: MapList, (key, item): (u32, Map)| {
+        acc.insert(key, item.name);
+        acc
+    };
+
+    Ok(IntermediaryMap::deserialize(deserializer)?
+        .0
+        .into_iter()
+        .fold(HashMap::new(), insert_map))
+}
 
 #[derive(Debug)]
 pub struct MapService(Service<MapList>);
@@ -66,16 +82,8 @@ impl MapService {
     }
 
     async fn populate_cache(&mut self) -> ServiceResult<()> {
-        // Applies an insert operation in the Lfold
-        let insert_map = |mut acc: MapList, (_, map): (String, Map)| -> MapList {
-            acc.insert(map.id, map.name);
-
-            acc
-        };
-
         let map_object: MapObject = reqwest::get(&self.0.endpoint).await?.json().await?;
-        let map_list: MapList = map_object.data.into_iter().fold(HashMap::new(), insert_map);
-        self.0.cache = Some(map_list);
+        self.0.cache = Some(map_object.data);
 
         Ok(())
     }

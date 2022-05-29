@@ -1,132 +1,164 @@
+use crate::services::{ddragon::BASE_URL, util, Service, ServiceResult};
+use serde::{Deserialize, Deserializer};
+use std::collections::HashMap;
 
+type ItemList = HashMap<u32, String>;
 
+#[derive(Debug, Deserialize)]
+struct ItemObject {
+    #[serde(rename(deserialize = "type"), skip)]
+    type_field: (),
+    #[serde(skip)]
+    version: (),
+    #[serde(skip)]
+    basic: (),
+    #[serde(deserialize_with = "deserialize_item_data")]
+    data: ItemList,
+    #[serde(skip)]
+    groups: (),
+    #[serde(skip)]
+    tree: (),
+}
 
+#[derive(Debug, Deserialize)]
+struct Item {
+    name: String,
+    #[serde(skip)]
+    description: (),
+    #[serde(skip)]
+    colloq: (),
+    #[serde(skip)]
+    plaintext: (),
+    #[serde(skip)]
+    into: (),
+    #[serde(skip)]
+    image: (),
+    #[serde(skip)]
+    gold: (),
+    #[serde(skip)]
+    tags: (),
+    #[serde(skip)]
+    maps: (),
+    #[serde(skip)]
+    stats: (),
+}
 
+fn deserialize_item_data<'de, D>(deserializer: D) -> Result<HashMap<u32, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct IntermediaryMap(HashMap<u32, Item>);
 
-// #[derive(Debug, Deserialize, PartialEq)]
-// struct MapImage {
-//     full: String,
-//     sprite: String,
-//     group: String,
-//     x: u32,
-//     y: u32,
-//     w: u32,
-//     h: u32,
-// }
+    let insert_item = |mut acc: ItemList, (key, item): (u32, Item)| {
+        acc.insert(key, item.name);
+        acc
+    };
 
-// #[derive(Debug, Deserialize, PartialEq)]
-// struct Map {
-//     map_name: String,
-//     map_id: String,
-//     image: MapImage,
-// }
+    Ok(IntermediaryMap::deserialize(deserializer)?
+        .0
+        .into_iter()
+        .fold(HashMap::new(), insert_item))
+}
 
-// type MapList = HashMap<u32, Map>;
+pub struct ItemService(Service<ItemList>);
 
-// struct Item {
-//     name: String,
-//     description: String,
-//     colloq: String,
-//     plaintext: String,
-// }
+impl ItemService {
+    pub fn new(patch_id: &str, region: &str) -> Self {
+        let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/item.json");
 
-// ItemList<
+        Self(Service::new(endpoint, None))
+    }
 
-// #[derive(Debug)]
-// pub struct ItemService(Service<ItemList>);
+    async fn get_name_from_id(&mut self, id: u32) -> ServiceResult<Option<&str>> {
+        let cache = self.cache().await?;
+        let name = cache.get(&id).map(|name| name.as_ref());
 
-// impl ItemService {
-//     pub fn new(patch_id: &str, region: &str) -> Self {
-//         let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/item.json");
+        Ok(name)
+    }
 
-//         Self(Service::new(endpoint, None))
-//     }
+    async fn get_id_from_name<'a>(&'a mut self, name: &str) -> ServiceResult<Option<&u32>> {
+        let cache = self.cache().await?;
+        let id = cache.iter().find_map(|(key, value): (&'a u32, &String)| {
+            if value == name {
+                return Some(key);
+            }
 
-//     async fn get_item_from_id(&mut self, id: u32) -> ServiceResult<Option<&str>> {
-//         let cache = self.cache().await?;
-//         let name = cache.get(&id).map(|item| item.map_name.as_str());
+            None
+        });
 
-//         Ok(name)
-//     }
+        Ok(id)
+    }
 
-//     async fn get_id_from_item<'a>(&'a mut self, name: &str) -> ServiceResult<Option<&u32>> {
-//         let cache = self.cache().await?;
-//         let id = cache.iter().find_map(|(key, value): (&'a u32, &Item)| {
-//             if value.map_name == name {
-//                 return Some(key);
-//             }
+    // UNWRAP SAFETY: in the case that cache is None, we populate it before returning
+    async fn cache(&mut self) -> ServiceResult<&ItemList> {
+        if self.0.cache.is_none() {
+            self.populate_cache().await?;
+        }
 
-//             None
-//         });
+        Ok(self.0.cache.as_ref().unwrap())
+    }
 
-//         Ok(id)
-//     }
+    async fn populate_cache(&mut self) -> ServiceResult<()> {
+        let map_object: ItemObject = reqwest::get(&self.0.endpoint).await?.json().await?;
+        self.0.cache = Some(map_object.data);
 
-//     async fn cache(&mut self) -> ServiceResult<&ItemList> {
-//         self.0.cache().await
-//     }
+        Ok(())
+    }
+}
 
-//     // // UNWRAP SAFETY: if cache is none we populate it, before returning it
-//     // async fn cache(&mut self) -> ServiceResult<&ItemList> {
-//     //     if self.0.cache.is_none() {
-//     //         self.populate_cache().await?;
-//     //     }
+#[cfg(test)]
+mod test {
 
-//     //     Ok(self.0.cache.as_ref().unwrap())
-//     // }
+    use super::{ItemService, ServiceResult};
+    use crate::services::ddragon::PatchService;
 
-//     // async fn populate_cache(&mut self) -> ServiceResult<()> {
-//     //     let response_body = self.get(&self.0.endpoint).await?;
-//     //     self.0.cache = Some(response_body);
+    const TEST_DATA: [(u32, &str); 3] = [
+        (1001, "Boots"),
+        (1004, "Faerie Charm"),
+        (1006, "Rejuvenation Bead"),
+    ];
 
-//     //     Ok(())
-//     // }
-// }
+    async fn initialize() -> ServiceResult<ItemService> {
+        let mut patch_service = PatchService::default();
+        let current_patch = patch_service.get_current().await?;
+        let region = "en_US";
+        let mut service = ItemService::new(current_patch, region);
+        service.cache().await?;
 
-// #[async_trait]
-// impl Get<ItemList> for ItemService {
-//     async fn get(&self, url: &str) -> ServiceResult<ItemList> {
-//         Ok(reqwest::get(url).await?.json().await?)
-//     }
-// }
+        Ok(service)
+    }
 
-// #[cfg(test)]
-// mod test {
-//     use super::{ItemService, ServiceResult};
-//     use crate::services::ddragon::PatchService;
+    #[tokio::test(flavor = "multi_thread")]
+    async fn initialization_works() -> ServiceResult<()> {
+        let _item_service = initialize().await?;
 
-//     const TEST_DATA: [(u32, &str); 3] = [
-//         (11, "Summoner's Rift"),
-//         (11, "Summoner's Rift"),
-//         (11, "Summoner's Rift"),
-//     ];
+        Ok(())
+    }
 
-//     async fn initialize() -> ServiceResult<ItemService> {
-//         let mut patch_service = PatchService::default();
-//         let current_patch = patch_service.get_current().await?;
-//         let region = "en_US";
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_id_succeeds() -> ServiceResult<()> {
+        let mut map_service = initialize().await?;
+        for (id, name) in TEST_DATA {
+            let result = map_service.get_id_from_name(name).await?;
 
-//         Ok(ItemService::new(current_patch, region))
-//     }
+            assert!(result.is_some());
+            assert_eq!(*result.unwrap(), id);
+        }
 
-//     #[tokio::test]
-//     async fn initialization_works() -> ServiceResult<()> {
-//         let _item_service = initialize().await?;
+        Ok(())
+    }
 
-//         Ok(())
-//     }
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_name_succeeds() -> ServiceResult<()> {
+        let mut map_service = initialize().await?;
+        for (id, name) in TEST_DATA {
+            let result = map_service.get_name_from_id(id).await?;
 
-//     #[tokio::test]
-//     async fn get_id_succeeds() -> ServiceResult<()> {
-//         let item_service = initialize().await?;
+            assert!(result.is_some());
+            assert_eq!(result.unwrap(), name);
+        }
 
-//         Ok(())
-//     }
-
-//     #[tokio::test]
-//     async fn get_name_succeeds() -> ServiceResult<()> {
-//         let item_service = initialize().await?;
-
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}
