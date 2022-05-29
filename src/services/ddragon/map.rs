@@ -102,14 +102,14 @@ mod test {
         Ok(MapService::new(current_patch, region))
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn initialization_works() -> ServiceResult<()> {
         let _map_service = initialize().await?;
 
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn get_id_succeeds() -> ServiceResult<()> {
         let mut map_service = initialize().await?;
         for (id, name) in TEST_DATA {
@@ -122,7 +122,7 @@ mod test {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn get_name_succeeds() -> ServiceResult<()> {
         let mut map_service = initialize().await?;
         for (id, name) in TEST_DATA {

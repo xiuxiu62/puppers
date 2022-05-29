@@ -50,7 +50,7 @@ impl PatchService {
 mod tests {
     use super::{PatchService, ServiceResult};
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn request_succeeds() -> ServiceResult<()> {
         let mut service = PatchService::default();
         let response_body = service.get_all().await?;
