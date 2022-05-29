@@ -6,10 +6,6 @@ type MapList = HashMap<u32, String>;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct MapObject {
-    #[serde(rename(deserialize = "type"), skip)]
-    type_field: (),
-    #[serde(skip)]
-    version: (),
     #[serde(deserialize_with = "deserialize_map_data")]
     data: MapList,
 }
@@ -18,10 +14,6 @@ struct MapObject {
 struct Map {
     #[serde(rename(deserialize = "MapName"))]
     name: String,
-    #[serde(rename(deserialize = "MapId"), skip)]
-    id: u32,
-    #[serde(skip)]
-    image: (),
 }
 
 fn deserialize_map_data<'de, D>(deserializer: D) -> Result<HashMap<u32, String>, D::Error>
@@ -114,7 +106,6 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn initialization_works() -> ServiceResult<()> {
         let _map_service = initialize().await?;
-        println!("{:?}", _map_service.0.cache);
 
         Ok(())
     }

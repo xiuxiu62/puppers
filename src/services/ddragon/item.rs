@@ -6,41 +6,13 @@ type ItemList = HashMap<u32, String>;
 
 #[derive(Debug, Deserialize)]
 struct ItemObject {
-    #[serde(rename(deserialize = "type"), skip)]
-    type_field: (),
-    #[serde(skip)]
-    version: (),
-    #[serde(skip)]
-    basic: (),
     #[serde(deserialize_with = "deserialize_item_data")]
     data: ItemList,
-    #[serde(skip)]
-    groups: (),
-    #[serde(skip)]
-    tree: (),
 }
 
 #[derive(Debug, Deserialize)]
 struct Item {
     name: String,
-    #[serde(skip)]
-    description: (),
-    #[serde(skip)]
-    colloq: (),
-    #[serde(skip)]
-    plaintext: (),
-    #[serde(skip)]
-    into: (),
-    #[serde(skip)]
-    image: (),
-    #[serde(skip)]
-    gold: (),
-    #[serde(skip)]
-    tags: (),
-    #[serde(skip)]
-    maps: (),
-    #[serde(skip)]
-    stats: (),
 }
 
 fn deserialize_item_data<'de, D>(deserializer: D) -> Result<HashMap<u32, String>, D::Error>
