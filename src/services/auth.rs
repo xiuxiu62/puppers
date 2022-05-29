@@ -1,5 +1,5 @@
 use super::{ServiceError, ServiceResult};
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::{System, SystemExt};
 
 #[derive(Debug, Default)]
 struct Auth;
@@ -15,7 +15,7 @@ impl Auth {
         };
 
         let system = System::new_all();
-        let temp = system.processes_by_exact_name(process_name).into_iter();
+        let _temp = system.processes_by_exact_name(process_name).into_iter();
 
         Ok(())
     }
