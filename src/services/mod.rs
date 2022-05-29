@@ -4,7 +4,7 @@ pub mod ugg;
 
 mod auth;
 mod error;
-mod util;
+pub mod util;
 
 pub use error::{ServiceError, ServiceResult};
 
