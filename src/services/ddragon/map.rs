@@ -1,14 +1,13 @@
-use crate::services::{ddragon::BASE_URL, Service, ServiceResult};
+use crate::services::{ddragon::BASE_URL, util, Service, ServiceResult};
 use serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct MapObject {
-    // #[serde(rename = "type", skip)]
-    #[serde(rename = "type")]
-    type_field: String,
-    // #[serde(skip)]
-    version: String,
+    #[serde(rename(deserialize = "type"), skip)]
+    type_field: (),
+    #[serde(skip)]
+    version: (),
     data: HashMap<String, Map>,
 }
 
@@ -16,21 +15,13 @@ struct MapObject {
 struct Map {
     #[serde(rename(deserialize = "MapName"))]
     name: String,
-    #[serde(rename = "MapId")]
-    id: String,
+    #[serde(
+        rename(deserialize = "MapId"),
+        deserialize_with = "util::deserialize_number_from_string"
+    )]
+    id: u32,
     #[serde(skip)]
-    image: MapImage,
-}
-
-#[derive(Default, Debug, Deserialize, PartialEq)]
-struct MapImage {
-    full: String,
-    sprite: String,
-    group: String,
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
+    image: (),
 }
 
 type MapList = HashMap<u32, String>;
@@ -76,18 +67,14 @@ impl MapService {
 
     async fn populate_cache(&mut self) -> ServiceResult<()> {
         // Applies an insert operation in the Lfold
-        let insert_map = |mut acc: MapList, (id, map): (String, Map)| -> ServiceResult<MapList> {
-            let id = id.parse::<u32>()?;
-            acc.insert(id, map.name);
+        let insert_map = |mut acc: MapList, (_, map): (String, Map)| -> MapList {
+            acc.insert(map.id, map.name);
 
-            Ok(acc)
+            acc
         };
 
         let map_object: MapObject = reqwest::get(&self.0.endpoint).await?.json().await?;
-        let map_list: MapList = map_object
-            .data
-            .into_iter()
-            .try_fold(HashMap::new(), insert_map)?;
+        let map_list: MapList = map_object.data.into_iter().fold(HashMap::new(), insert_map);
         self.0.cache = Some(map_list);
 
         Ok(())

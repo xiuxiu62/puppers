@@ -1,7 +1,6 @@
 pub mod champion;
 pub mod error;
 mod item;
-pub mod lcu;
 pub mod map;
 mod patch;
 pub mod rune;
