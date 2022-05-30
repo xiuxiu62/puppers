@@ -1,6 +1,7 @@
 pub mod ddragon;
 pub mod lcu;
 pub mod ugg;
+pub mod mobalytics;
 
 mod auth;
 mod error;
