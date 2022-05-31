@@ -1,43 +1,162 @@
 use std::collections::HashMap;
 
-pub struct ItemBlock<'a> {
-    name: &'a str,
-    item_ids: &'a [u32],
+use serde::Serialize;
+
+#[derive(Debug)]
+pub struct ItemBlock {
+    name: String,
+    item_ids: Vec<u32>,
 }
 
-impl<'a> ItemBlock<'a> {
-    pub fn new(name: &'a str, item_ids: &'a [u32]) -> Self {
-        Self { name, item_ids }
-    }
-
-    pub fn name(&self) -> &str {
-        self.name
-    }
-
-    pub fn item_ids(&self) -> &[u32] {
-        self.item_ids
+impl ItemBlock {
+    #[inline]
+    pub fn new(name: &str, item_ids: &[u32]) -> Self {
+        Self {
+            name: name.to_owned(),
+            item_ids: item_ids.to_owned(),
+        }
     }
 }
 
-pub struct ItemSet<'a> {
-    name: &'a str,
-    blocks: Vec<ItemBlock<'a>>,
+#[derive(Debug)]
+pub struct ItemSet {
+    name: String,
+    blocks: Vec<ItemBlock>,
     champion_id: u32,
-    preferred_slots: HashMap<&'a str, u32>,
+    preferred_slots: HashMap<String, u32>,
 }
 
-impl<'a> ItemSet<'a> {
-    pub fn new(
-        name: &'a str,
-        blocks: Vec<ItemBlock<'a>>,
+impl ItemSet {
+    #[inline]
+    pub const fn new(
+        name: String,
+        blocks: Vec<ItemBlock>,
         champion_id: u32,
-        preferred_slots: HashMap<&'a str, u32>,
+        preferred_slots: HashMap<String, u32>,
     ) -> Self {
         Self {
             name,
             blocks,
             champion_id,
             preferred_slots,
+        }
+    }
+
+    pub fn build(&self) {}
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub struct ItemConfig {
+    #[serde(rename(serialize = "associatedChampions"))]
+    associated_champion_ids: Vec<u32>,
+    #[serde(rename(serialize = "associatedMaps"))]
+    associated_map_ids: Vec<u32>,
+    blocks: Vec<ParsedBlock>,
+    map: String,
+    mode: String,
+    preferred_item_slots: Vec<ParsedPreferredItemSlots>,
+    #[serde(rename(serialize = "sortrank"))]
+    sort_rank: u32,
+    started_from: String,
+    title: String,
+    #[serde(rename(serialize = "type"))]
+    type_field: String,
+}
+
+impl From<ItemSet> for ItemConfig {
+    fn from(item_set: ItemSet) -> Self {
+        let parse_block = |block: ItemBlock| -> (String, Vec<ParsedItem>) {
+            (
+                block.name,
+                block
+                    .item_ids
+                    .into_iter()
+                    .map(|item| ParsedItem::from(item))
+                    .collect(),
+            )
+        };
+        let parse_blocks = |(name, items)| -> ParsedBlock { ParsedBlock::new(name, items) };
+        let parse_preferred_item_slots = |(item, slot)| ParsedPreferredItemSlots::new(item, slot);
+
+        let blocks: Vec<ParsedBlock> = item_set
+            .blocks
+            .into_iter()
+            .map(parse_block)
+            .map(parse_blocks)
+            .collect();
+
+        let preferred_item_slots: Vec<ParsedPreferredItemSlots> = item_set
+            .preferred_slots
+            .into_iter()
+            .map(parse_preferred_item_slots)
+            .collect();
+
+        Self {
+            associated_champion_ids: vec![item_set.champion_id],
+            associated_map_ids: vec![],
+            blocks,
+            map: "any".to_owned(),
+            mode: "any".to_owned(),
+            preferred_item_slots,
+            sort_rank: 0,
+            started_from: "blank".to_owned(),
+            title: item_set.name,
+            type_field: "custom".to_owned(),
+        }
+    }
+}
+
+type ParsedItems = Vec<ParsedItem>;
+
+#[derive(Debug, Serialize)]
+struct ParsedItem {
+    count: u32,
+    id: String,
+}
+
+impl From<u32> for ParsedItem {
+    fn from(item_id: u32) -> Self {
+        Self {
+            count: 1,
+            id: item_id.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+struct ParsedBlock {
+    hide_if_summoner_spell: String,
+    items: Vec<ParsedItem>,
+    show_if_summoner_spell: String,
+    #[serde(rename(serialize = "type"))]
+    type_field: String,
+}
+
+impl ParsedBlock {
+    pub fn new(name: String, items: Vec<ParsedItem>) -> Self {
+        Self {
+            hide_if_summoner_spell: "".to_owned(),
+            items,
+            show_if_summoner_spell: "".to_owned(),
+            type_field: name,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+struct ParsedPreferredItemSlots {
+    id: String,
+    preferred_item_slot: u32,
+}
+
+impl ParsedPreferredItemSlots {
+    pub fn new(id: String, preferred_item_slot: u32) -> Self {
+        Self {
+            id,
+            preferred_item_slot,
         }
     }
 }
