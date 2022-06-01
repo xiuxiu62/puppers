@@ -41,13 +41,21 @@ impl ItemSet {
             preferred_slots,
         }
     }
+}
 
-    pub fn build(&self) {}
+// Returns a serialized ItemConfig
+impl Serialize for ItemSet {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ItemConfig::from(self).serialize(serializer)
+    }
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all(serialize = "camelCase"))]
-pub struct ItemConfig {
+struct ItemConfig {
     #[serde(rename(serialize = "associatedChampions"))]
     associated_champion_ids: Vec<u32>,
     #[serde(rename(serialize = "associatedMaps"))]
@@ -64,31 +72,33 @@ pub struct ItemConfig {
     type_field: String,
 }
 
-impl From<ItemSet> for ItemConfig {
-    fn from(item_set: ItemSet) -> Self {
-        let parse_block = |block: ItemBlock| -> (String, Vec<ParsedItem>) {
+impl From<&ItemSet> for ItemConfig {
+    fn from(item_set: &ItemSet) -> Self {
+        let parse_block = |block: &ItemBlock| -> (String, Vec<ParsedItem>) {
             (
-                block.name,
+                block.name.clone(),
                 block
                     .item_ids
-                    .into_iter()
-                    .map(|item| ParsedItem::from(item))
+                    .iter()
+                    .map(|item| ParsedItem::from(item.clone()))
                     .collect(),
             )
         };
         let parse_blocks = |(name, items)| -> ParsedBlock { ParsedBlock::new(name, items) };
-        let parse_preferred_item_slots = |(item, slot)| ParsedPreferredItemSlots::new(item, slot);
+        let parse_preferred_item_slots = |(item, slot): (&String, &u32)| {
+            ParsedPreferredItemSlots::new(item.clone(), slot.clone())
+        };
 
         let blocks: Vec<ParsedBlock> = item_set
             .blocks
-            .into_iter()
+            .iter()
             .map(parse_block)
             .map(parse_blocks)
             .collect();
 
         let preferred_item_slots: Vec<ParsedPreferredItemSlots> = item_set
             .preferred_slots
-            .into_iter()
+            .iter()
             .map(parse_preferred_item_slots)
             .collect();
 
@@ -101,7 +111,7 @@ impl From<ItemSet> for ItemConfig {
             preferred_item_slots,
             sort_rank: 0,
             started_from: "blank".to_owned(),
-            title: item_set.name,
+            title: item_set.name.to_owned(),
             type_field: "custom".to_owned(),
         }
     }
