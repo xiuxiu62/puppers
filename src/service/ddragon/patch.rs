@@ -1,4 +1,5 @@
-use crate::services::{ddragon::BASE_URL, Service, ServiceResult};
+use super::BASE_URL;
+use crate::service::{Service, ServiceResult};
 
 type PatchList = Vec<String>;
 

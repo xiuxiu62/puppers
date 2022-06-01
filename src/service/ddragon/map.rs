@@ -1,28 +1,30 @@
-use crate::services::{ddragon::BASE_URL, Service, ServiceResult};
+use super::BASE_URL;
+use crate::service::{Service, ServiceResult};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 
-type ItemList = HashMap<u32, String>;
+type MapList = HashMap<u32, String>;
 
-#[derive(Debug, Deserialize)]
-struct ItemObject {
-    #[serde(deserialize_with = "deserialize_item_data")]
-    data: ItemList,
+#[derive(Debug, Deserialize, PartialEq)]
+struct MapObject {
+    #[serde(deserialize_with = "deserialize_map_data")]
+    data: MapList,
 }
 
-#[derive(Debug, Deserialize)]
-struct Item {
+#[derive(Debug, Deserialize, PartialEq)]
+struct Map {
+    #[serde(rename(deserialize = "MapName"))]
     name: String,
 }
 
-fn deserialize_item_data<'de, D>(deserializer: D) -> Result<ItemList, D::Error>
+fn deserialize_map_data<'de, D>(deserializer: D) -> Result<MapList, D::Error>
 where
     D: Deserializer<'de>,
 {
     #[derive(Deserialize)]
-    struct IntermediaryMap(HashMap<u32, Item>);
+    struct IntermediaryMap(HashMap<u32, Map>);
 
-    let insert_item = |mut acc: ItemList, (key, item): (u32, Item)| {
+    let insert_map = |mut acc: MapList, (key, item): (u32, Map)| {
         acc.insert(key, item.name);
         acc
     };
@@ -30,14 +32,15 @@ where
     Ok(IntermediaryMap::deserialize(deserializer)?
         .0
         .into_iter()
-        .fold(HashMap::new(), insert_item))
+        .fold(HashMap::new(), insert_map))
 }
 
-pub struct ItemService(Service<ItemList>);
+#[derive(Debug)]
+pub struct MapService(Service<MapList>);
 
-impl ItemService {
+impl MapService {
     pub fn new(patch_id: &str, region: &str) -> Self {
-        let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/item.json");
+        let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/map.json");
 
         Self(Service::new(endpoint, None))
     }
@@ -63,7 +66,7 @@ impl ItemService {
     }
 
     // UNWRAP SAFETY: in the case that cache is None, we populate it before returning
-    async fn cache(&mut self) -> ServiceResult<&ItemList> {
+    async fn cache(&mut self) -> ServiceResult<&MapList> {
         if self.0.cache.is_none() {
             self.populate_cache().await?;
         }
@@ -72,7 +75,7 @@ impl ItemService {
     }
 
     async fn populate_cache(&mut self) -> ServiceResult<()> {
-        let map_object: ItemObject = reqwest::get(&self.0.endpoint).await?.json().await?;
+        let map_object: MapObject = reqwest::get(&self.0.endpoint).await?.json().await?;
         self.0.cache = Some(map_object.data);
 
         Ok(())
@@ -82,20 +85,20 @@ impl ItemService {
 #[cfg(test)]
 mod test {
 
-    use super::{ItemService, ServiceResult};
+    use super::{MapService, ServiceResult};
     use crate::services::ddragon::PatchService;
 
     const TEST_DATA: [(u32, &str); 3] = [
-        (1001, "Boots"),
-        (1004, "Faerie Charm"),
-        (1006, "Rejuvenation Bead"),
+        (11, "Summoner's Rift"),
+        (12, "Howling Abyss"),
+        (21, "Nexus Blitz"),
     ];
 
-    async fn initialize() -> ServiceResult<ItemService> {
+    async fn initialize() -> ServiceResult<MapService> {
         let mut patch_service = PatchService::default();
         let current_patch = patch_service.get_current().await?;
         let region = "en_US";
-        let mut service = ItemService::new(current_patch, region);
+        let mut service = MapService::new(current_patch, region);
         service.cache().await?;
 
         Ok(service)
@@ -103,16 +106,16 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn initialization_works() -> ServiceResult<()> {
-        let _item_service = initialize().await?;
+        let _map_service = initialize().await?;
 
         Ok(())
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn get_id_succeeds() -> ServiceResult<()> {
-        let mut item_service = initialize().await?;
+        let mut map_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = item_service.get_id(name).await?;
+            let result = map_service.get_id(name).await?;
 
             assert!(result.is_some());
             assert_eq!(*result.unwrap(), id);
@@ -123,9 +126,9 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn get_name_succeeds() -> ServiceResult<()> {
-        let mut item_service = initialize().await?;
+        let mut map_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = item_service.get_name(id).await?;
+            let result = map_service.get_name(id).await?;
 
             assert!(result.is_some());
             assert_eq!(result.unwrap(), name);

@@ -1,57 +1,62 @@
-use crate::services::{ddragon::BASE_URL, Service, ServiceResult};
+use super::BASE_URL;
+use crate::service::{util, Service, ServiceResult};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 
-type SummonerList = HashMap<String, String>;
+type ChampionList = HashMap<u32, String>;
 
 #[derive(Debug, Deserialize)]
-struct SummonerObject {
-    #[serde(deserialize_with = "deserialize_item_data")]
-    data: SummonerList,
+struct ChampionObject {
+    #[serde(deserialize_with = "deserialize_champion_data")]
+    data: ChampionList,
 }
 
 #[derive(Debug, Deserialize)]
-struct Summoner {
-    name: String,
+struct Champion {
+    #[serde(
+        rename(deserialize = "key"),
+        deserialize_with = "util::deserialize_number_from_string"
+    )]
+    id: u32,
 }
 
-fn deserialize_item_data<'de, D>(deserializer: D) -> Result<SummonerList, D::Error>
+fn deserialize_champion_data<'de, D>(deserializer: D) -> Result<ChampionList, D::Error>
 where
     D: Deserializer<'de>,
 {
     #[derive(Deserialize)]
-    struct IntermediaryMap(HashMap<String, Summoner>);
+    struct IntermediaryMap(HashMap<String, Champion>);
 
-    let insert_summoner = |mut acc: SummonerList, (key, summoner): (String, Summoner)| {
-        acc.insert(key, summoner.name);
+    let insert_champion = |mut acc: ChampionList, (name, champion): (String, Champion)| {
+        acc.insert(champion.id, name);
         acc
     };
 
     Ok(IntermediaryMap::deserialize(deserializer)?
         .0
         .into_iter()
-        .fold(HashMap::new(), insert_summoner))
+        .fold(HashMap::new(), insert_champion))
 }
 
-pub struct SummonerService(Service<SummonerList>);
+pub struct ChampionService(Service<ChampionList>);
 
-impl SummonerService {
+impl ChampionService {
     pub fn new(patch_id: &str, region: &str) -> Self {
-        let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/summoner.json");
+        let endpoint = format!("{BASE_URL}/cdn/{patch_id}/data/{region}/champion.json");
 
         Self(Service::new(endpoint, None))
     }
 
-    async fn get_name(&mut self, id: &str) -> ServiceResult<Option<&str>> {
+    async fn get_name(&mut self, id: u32) -> ServiceResult<Option<&str>> {
         let cache = self.cache().await?;
-        let name = cache.get(id).map(|name| name.as_ref());
+        let name = cache.get(&id).map(|name| name.as_ref());
 
         Ok(name)
     }
 
-    async fn get_id<'a>(&'a mut self, name: &str) -> ServiceResult<Option<&String>> {
+    async fn get_id<'a>(&'a mut self, name: &str) -> ServiceResult<Option<&u32>> {
         let cache = self.cache().await?;
-        let id = cache.iter().find_map(|(key, value): (&String, &String)| {
+        let id = cache.iter().find_map(|(key, value): (&'a u32, &String)| {
             if value == name {
                 return Some(key);
             }
@@ -63,7 +68,7 @@ impl SummonerService {
     }
 
     // UNWRAP SAFETY: in the case that cache is None, we populate it before returning
-    async fn cache(&mut self) -> ServiceResult<&SummonerList> {
+    async fn cache(&mut self) -> ServiceResult<&ChampionList> {
         if self.0.cache.is_none() {
             self.populate_cache().await?;
         }
@@ -72,7 +77,7 @@ impl SummonerService {
     }
 
     async fn populate_cache(&mut self) -> ServiceResult<()> {
-        let map_object: SummonerObject = reqwest::get(&self.0.endpoint).await?.json().await?;
+        let map_object: ChampionObject = reqwest::get(&self.0.endpoint).await?.json().await?;
         self.0.cache = Some(map_object.data);
 
         Ok(())
@@ -81,20 +86,16 @@ impl SummonerService {
 
 #[cfg(test)]
 mod test {
-    use super::{ServiceResult, SummonerService};
+    use super::{ChampionService, ServiceResult};
     use crate::services::ddragon::PatchService;
 
-    const TEST_DATA: [(&str, &str); 3] = [
-        ("SummonerBarrier", "Barrier"),
-        ("SummonerBoost", "Cleanse"),
-        ("SummonerDot", "Ignite"),
-    ];
+    const TEST_DATA: [(u32, &str); 3] = [(266, "Aatrox"), (103, "Ahri"), (84, "Akali")];
 
-    async fn initialize() -> ServiceResult<SummonerService> {
+    async fn initialize() -> ServiceResult<ChampionService> {
         let mut patch_service = PatchService::default();
         let current_patch = patch_service.get_current().await?;
         let region = "en_US";
-        let mut service = SummonerService::new(current_patch, region);
+        let mut service = ChampionService::new(current_patch, region);
         service.cache().await?;
 
         Ok(service)
@@ -102,16 +103,16 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn initialization_works() -> ServiceResult<()> {
-        let _summoner_service = initialize().await?;
+        let _champion_service = initialize().await?;
 
         Ok(())
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn get_id_succeeds() -> ServiceResult<()> {
-        let mut summoner_service = initialize().await?;
+        let mut champion_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = summoner_service.get_id(name).await?;
+            let result = champion_service.get_id(name).await?;
 
             assert!(result.is_some());
             assert_eq!(*result.unwrap(), id);
@@ -122,9 +123,9 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn get_name_succeeds() -> ServiceResult<()> {
-        let mut summoner_service = initialize().await?;
+        let mut champion_service = initialize().await?;
         for (id, name) in TEST_DATA {
-            let result = summoner_service.get_name(id).await?;
+            let result = champion_service.get_name(id).await?;
 
             assert!(result.is_some());
             assert_eq!(result.unwrap(), name);
